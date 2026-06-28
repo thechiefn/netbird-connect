@@ -28,11 +28,28 @@ runs:
       run: |
         echo "::error title=error hint::Support Linux Only"
         exit 1
+    - name: Cache Netbird Installer
+      id: cache-netbird-installer
+      uses: actions/cache@v5
+      with:
+        path: netbird-installer
+        key: netbird-installer
     - name: Download Netbird
       shell: bash
       env:
         USE_BIN_INSTALL: true
-      run: curl -fsSL https://pkgs.netbird.io/install.sh | sh
+      run: >
+        mkdir -p netbird-installer
+        
+        curl --fail --no-progress-meter --location
+        --etag-save netbird-installer/etag.txt --etag-compare netbird-installer/etag.txt
+        --write-out "HTTP Code from fetching installer : %{http_code}\n"
+        --output netbird-installer/install.sh
+        https://pkgs.netbird.io/install.sh
+        
+        chmod 755 netbird-installer/install.sh
+        
+        netbird-installer/install.sh
     - name: Connect to Netbird
       shell: bash
       env:
