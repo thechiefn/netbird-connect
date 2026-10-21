@@ -16,6 +16,10 @@ inputs:
     description: 'Optional additional arguments to `netbird up`'
     required: false
     default: ''
+  version:
+    description: 'NetBird release version to install (e.g. "0.81.3" or "latest")'
+    required: false
+    default: 'latest'
 branding:
   icon: 'bar-chart'
   color: 'orange'
@@ -28,28 +32,82 @@ runs:
       run: |
         echo "::error title=error hint::Support Linux Only"
         exit 1
-    - name: Cache Netbird Installer
-      id: cache-netbird-installer
-      uses: actions/cache@v5
-      with:
-        path: netbird-installer
-        key: netbird-installer
-    - name: Download Netbird
+    - name: Resolve NetBird Version and Architecture
+      id: meta
       shell: bash
       env:
-        USE_BIN_INSTALL: true
-      run: >
-        mkdir -p netbird-installer
-        
-        curl --fail --no-progress-meter --location
-        --etag-save netbird-installer/etag.txt --etag-compare netbird-installer/etag.txt
-        --write-out "HTTP Code from fetching installer : %{http_code}\n"
-        --output netbird-installer/install.sh
-        https://pkgs.netbird.io/install.sh
-        
-        chmod 755 netbird-installer/install.sh
-        
-        netbird-installer/install.sh
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        ARCH="$(uname -m)"
+        case "${ARCH}" in
+          x86_64|amd64) ARCH="amd64" ;;
+          i?86|x86) ARCH="386" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          armv6*) ARCH="armv6" ;;
+          *)
+            echo "::error title=Unsupported Architecture::Architecture ${ARCH} is not supported"
+            exit 1
+            ;;
+        esac
+
+        if [ -z "${INPUT_VERSION}" ] || [ "${INPUT_VERSION}" = "latest" ]; then
+          RELEASE_JSON="$(curl -fsSL https://pkgs.netbird.io/releases/latest 2>/dev/null || true)"
+          if [ -z "${RELEASE_JSON}" ]; then
+            if [ -n "${GITHUB_TOKEN}" ]; then
+              RELEASE_JSON="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" https://api.github.com/repos/netbirdio/netbird/releases/latest)"
+            else
+              RELEASE_JSON="$(curl -fsSL https://api.github.com/repos/netbirdio/netbird/releases/latest)"
+            fi
+          fi
+          VERSION="$(printf '%s' "${RELEASE_JSON}" | grep -Eo '"tag_name":[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"' | head -n 1 | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')"
+        else
+          VERSION="v${INPUT_VERSION#v}"
+        fi
+
+        if [ -z "${VERSION}" ]; then
+          echo "::error title=Version Resolution Failed::Unable to resolve NetBird release version"
+          exit 1
+        fi
+
+        echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+        echo "arch=${ARCH}" >> "${GITHUB_OUTPUT}"
+    - name: Cache NetBird Binary
+      id: cache-netbird
+      uses: actions/cache@v5
+      with:
+        path: ${{ runner.temp }}/netbird-bin
+        key: netbird-bin-${{ runner.os }}-${{ steps.meta.outputs.arch }}-${{ steps.meta.outputs.version }}
+    - name: Download and Install NetBird
+      shell: bash
+      env:
+        VERSION: ${{ steps.meta.outputs.version }}
+        ARCH: ${{ steps.meta.outputs.arch }}
+        CACHE_HIT: ${{ steps.cache-netbird.outputs.cache-hit }}
+        CACHE_DIR: ${{ runner.temp }}/netbird-bin
+      run: |
+        set -euo pipefail
+        if [ "${CACHE_HIT}" != "true" ] || [ ! -x "${CACHE_DIR}/netbird" ]; then
+          mkdir -p "${CACHE_DIR}"
+          TMP_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/netbird-dl.XXXXXXXXXX")"
+          trap 'rm -rf "${TMP_DIR}"' EXIT
+          VERSION_NUM="${VERSION#v}"
+          ARCHIVE="netbird_${VERSION_NUM}_linux_${ARCH}.tar.gz"
+          DOWNLOAD_URL="https://github.com/netbirdio/netbird/releases/download/${VERSION}/${ARCHIVE}"
+          echo "Downloading NetBird ${VERSION} (${ARCH}) from ${DOWNLOAD_URL}..."
+          curl -fsSL --retry 3 --retry-connrefused -o "${TMP_DIR}/${ARCHIVE}" "${DOWNLOAD_URL}"
+          tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${TMP_DIR}" netbird
+          install -m 0755 "${TMP_DIR}/netbird" "${CACHE_DIR}/netbird"
+        else
+          echo "Using cached NetBird ${VERSION} (${ARCH}) binary"
+        fi
+
+        sudo install -m 0755 "${CACHE_DIR}/netbird" /usr/bin/netbird
+        sudo mkdir -p /etc/netbird
+        echo "package_manager=bin" | sudo tee /etc/netbird/install.conf > /dev/null
+        sudo netbird service install 2>&1 || true
+        sudo netbird service start 2>&1 || true
     - name: Connect to Netbird
       shell: bash
       env:
