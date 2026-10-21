@@ -13,6 +13,7 @@ This GitHub Action allows you to connect your workflow to your Netbird network. 
 | `management-url`| This is the URL of the Netbird Management Service. If not provided, a default URL will be used. | No            | 'https://api.netbird.io:443' |
 | `args`          | Optional additional arguments to pass to the `netbird up` command.     | No       | ' '                               |
 | `version`       | NetBird release version to install (e.g. `0.81.3` or `latest`).         | No       | 'latest'                          |
+| `timeout`       | Maximum time in seconds to wait for NetBird to connect.                 | No       | '60'                              |
 
 ## Example Usage
 
