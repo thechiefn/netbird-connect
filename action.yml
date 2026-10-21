@@ -20,6 +20,10 @@ inputs:
     description: 'NetBird release version to install (e.g. "0.81.3" or "latest")'
     required: false
     default: 'latest'
+  timeout:
+    description: 'Maximum time in seconds to wait for NetBird to connect'
+    required: false
+    default: '60'
 branding:
   icon: 'bar-chart'
   color: 'orange'
@@ -153,8 +157,30 @@ runs:
         sudo netbird "${CMD_ARGS[@]}"
     - name: Wait for Netbird to connect
       shell: bash
+      env:
+        TIMEOUT: ${{ inputs.timeout }}
       run: |
-          while [ -z "$(sudo netbird status | grep 'Management: Connected')" ]; do
-          echo "Waiting for Netbird to connect..."
-          sleep 5
-          done
+        set -euo pipefail
+        if ! [[ "${TIMEOUT}" =~ ^[0-9]+$ ]] || [ "${TIMEOUT}" -le 0 ]; then
+          TIMEOUT=60
+        fi
+
+        ELAPSED=0
+        while true; do
+          STATUS_OUTPUT="$(sudo netbird status 2>&1 || true)"
+          if printf '%s\n' "${STATUS_OUTPUT}" | grep -q 'Management: Connected' && \
+             printf '%s\n' "${STATUS_OUTPUT}" | grep -q 'Signal: Connected'; then
+            echo "NetBird connected (Management and Signal ready in ${ELAPSED}s)."
+            break
+          fi
+
+          if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
+            echo "::error title=NetBird Connection Timeout::Timed out after ${TIMEOUT}s waiting for NetBird Management and Signal to connect."
+            sudo netbird status --detail || true
+            exit 1
+          fi
+
+          echo "Waiting for NetBird to connect (${ELAPSED}s/${TIMEOUT}s)..."
+          sleep 1
+          ELAPSED=$((ELAPSED + 1))
+        done
