@@ -94,9 +94,21 @@ runs:
           trap 'rm -rf "${TMP_DIR}"' EXIT
           VERSION_NUM="${VERSION#v}"
           ARCHIVE="netbird_${VERSION_NUM}_linux_${ARCH}.tar.gz"
-          DOWNLOAD_URL="https://github.com/netbirdio/netbird/releases/download/${VERSION}/${ARCHIVE}"
-          echo "Downloading NetBird ${VERSION} (${ARCH}) from ${DOWNLOAD_URL}..."
-          curl -fsSL --retry 3 --retry-connrefused -o "${TMP_DIR}/${ARCHIVE}" "${DOWNLOAD_URL}"
+          CHECKSUMS="netbird_${VERSION_NUM}_checksums.txt"
+          BASE_URL="https://github.com/netbirdio/netbird/releases/download/${VERSION}"
+
+          echo "Downloading NetBird ${VERSION} (${ARCH}) and checksums from ${BASE_URL}..."
+          curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-connrefused \
+            -o "${TMP_DIR}/${ARCHIVE}" "${BASE_URL}/${ARCHIVE}"
+          curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-connrefused \
+            -o "${TMP_DIR}/${CHECKSUMS}" "${BASE_URL}/${CHECKSUMS}"
+
+          echo "Verifying SHA256 checksum for ${ARCHIVE}..."
+          (
+            cd "${TMP_DIR}"
+            grep -E "[[:space:]]${ARCHIVE}\$" "${CHECKSUMS}" | sha256sum -c -
+          )
+
           tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${TMP_DIR}" netbird
           install -m 0755 "${TMP_DIR}/netbird" "${CACHE_DIR}/netbird"
         else
@@ -116,11 +128,29 @@ runs:
         HOSTNAME: ${{ inputs.hostname }}
         MANAGEMENT_URL: ${{ inputs.management-url }}
       run: |
+        set -euo pipefail
+        if [ -z "${SETUP_KEY}" ]; then
+          echo "::error title=Missing Setup Key::The 'setup-key' input is required and cannot be empty."
+          exit 1
+        fi
+        echo "::add-mask::${SETUP_KEY}"
+
         if [ -z "${HOSTNAME}" ]; then
           RUNNER_HOST="$(hostname 2>/dev/null || uname -n 2>/dev/null || cat /etc/hostname 2>/dev/null || echo 'runner')"
           HOSTNAME="github-${RUNNER_HOST}"
         fi
-        sudo netbird up --setup-key=${SETUP_KEY} --hostname=${HOSTNAME} --management-url=${MANAGEMENT_URL} ${ADDITIONAL_ARGS}
+
+        CMD_ARGS=(
+          up
+          "--setup-key=${SETUP_KEY}"
+          "--hostname=${HOSTNAME}"
+          "--management-url=${MANAGEMENT_URL}"
+        )
+        if [ -n "${ADDITIONAL_ARGS}" ]; then
+          read -r -a EXTRA_ARGS <<< "${ADDITIONAL_ARGS}"
+          CMD_ARGS+=("${EXTRA_ARGS[@]}")
+        fi
+        sudo netbird "${CMD_ARGS[@]}"
     - name: Wait for Netbird to connect
       shell: bash
       run: |
