@@ -4,6 +4,12 @@
 
 This GitHub Action allows you to connect your workflow to your Netbird network. You can use it to set up a Netbird peer and connect it to your Netbird network.
 
+## Versioning
+
+Use **`@v2`** for the current major release line (binary caching, checksum verification, connection timeouts, and action outputs).
+
+`@v1` remains available for older workflows, but new features land on `@v2` only.
+
 ## Inputs
 
 | Input           | Description                                                              | Required | Default Value                     |
@@ -39,11 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Netbird Connect
         id: netbird
-        uses: thechiefn/netbird-connect@v1
+        uses: thechiefn/netbird-connect@v2
         with:
           setup-key: ${{ secrets.NETBIRD_SETUP_KEY }}
           hostname: 'my-custom-hostname'
