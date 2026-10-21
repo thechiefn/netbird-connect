@@ -15,6 +15,15 @@ This GitHub Action allows you to connect your workflow to your Netbird network. 
 | `version`       | NetBird release version to install (e.g. `0.81.3` or `latest`).         | No       | 'latest'                          |
 | `timeout`       | Maximum time in seconds to wait for NetBird to connect.                 | No       | '60'                              |
 
+## Outputs
+
+| Output     | Description                                                   |
+| ---------- | ------------------------------------------------------------- |
+| `ip`       | Assigned NetBird IPv4 address of the peer.                    |
+| `fqdn`     | Assigned NetBird FQDN of the peer.                            |
+| `hostname` | Effective hostname registered with NetBird Management.        |
+| `version`  | Installed NetBird release version tag (e.g. `v0.81.3`).       |
+
 ## Example Usage
 
 ```yaml
