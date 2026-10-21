@@ -7,18 +7,23 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   movetag:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Get major version num and update tag
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          MAJOR=${VERSION%%.*}
-          git config --global user.name 'YOUR NAME HERE'
-          git config --global user.email 'USERNAME@users.noreply.github.com'
-          git tag -fa ${MAJOR} -m "Update major version tag"
-          git push origin ${MAJOR} --force
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/}"
+          MAJOR="v${VERSION#v}"
+          MAJOR="${MAJOR%%.*}"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -fa "${MAJOR}" -m "Update major version tag ${MAJOR} to ${VERSION}"
+          git push origin "${MAJOR}" --force
