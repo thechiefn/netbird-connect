@@ -24,6 +24,19 @@ inputs:
     description: 'Maximum time in seconds to wait for NetBird to connect'
     required: false
     default: '60'
+outputs:
+  ip:
+    description: 'Assigned NetBird IPv4 address of the peer'
+    value: ${{ steps.wait.outputs.ip }}
+  fqdn:
+    description: 'Assigned NetBird FQDN of the peer'
+    value: ${{ steps.wait.outputs.fqdn }}
+  hostname:
+    description: 'Effective hostname registered with NetBird Management'
+    value: ${{ steps.connect.outputs.hostname }}
+  version:
+    description: 'Installed NetBird version tag'
+    value: ${{ steps.meta.outputs.version }}
 branding:
   icon: 'bar-chart'
   color: 'orange'
@@ -34,7 +47,7 @@ runs:
       if: ${{ runner.os != 'Linux' }}
       shell: bash
       run: |
-        echo "::error title=error hint::Support Linux Only"
+        echo "::error title=Unsupported Runner OS::NetBird Connect currently supports Linux runners only (detected: ${RUNNER_OS})."
         exit 1
     - name: Resolve NetBird Version and Architecture
       id: meta
@@ -92,6 +105,7 @@ runs:
         CACHE_DIR: ${{ runner.temp }}/netbird-bin
       run: |
         set -euo pipefail
+        echo "::group::Install NetBird ${VERSION} (${ARCH})"
         if [ "${CACHE_HIT}" != "true" ] || [ ! -x "${CACHE_DIR}/netbird" ]; then
           mkdir -p "${CACHE_DIR}"
           TMP_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/netbird-dl.XXXXXXXXXX")"
@@ -124,7 +138,9 @@ runs:
         echo "package_manager=bin" | sudo tee /etc/netbird/install.conf > /dev/null
         sudo netbird service install 2>&1 || true
         sudo netbird service start 2>&1 || true
+        echo "::endgroup::"
     - name: Connect to Netbird
+      id: connect
       shell: bash
       env:
         SETUP_KEY: ${{ inputs.setup-key }}
@@ -143,7 +159,9 @@ runs:
           RUNNER_HOST="$(hostname 2>/dev/null || uname -n 2>/dev/null || cat /etc/hostname 2>/dev/null || echo 'runner')"
           HOSTNAME="github-${RUNNER_HOST}"
         fi
+        echo "hostname=${HOSTNAME}" >> "${GITHUB_OUTPUT}"
 
+        echo "::group::Start NetBird Peer (${HOSTNAME})"
         CMD_ARGS=(
           up
           "--setup-key=${SETUP_KEY}"
@@ -155,10 +173,14 @@ runs:
           CMD_ARGS+=("${EXTRA_ARGS[@]}")
         fi
         sudo netbird "${CMD_ARGS[@]}"
+        echo "::endgroup::"
     - name: Wait for Netbird to connect
+      id: wait
       shell: bash
       env:
         TIMEOUT: ${{ inputs.timeout }}
+        VERSION: ${{ steps.meta.outputs.version }}
+        HOSTNAME: ${{ steps.connect.outputs.hostname }}
       run: |
         set -euo pipefail
         if ! [[ "${TIMEOUT}" =~ ^[0-9]+$ ]] || [ "${TIMEOUT}" -le 0 ]; then
@@ -166,6 +188,7 @@ runs:
         fi
 
         ELAPSED=0
+        STATUS_OUTPUT=""
         while true; do
           STATUS_OUTPUT="$(sudo netbird status 2>&1 || true)"
           if printf '%s\n' "${STATUS_OUTPUT}" | grep -q 'Management: Connected' && \
@@ -184,3 +207,28 @@ runs:
           sleep 1
           ELAPSED=$((ELAPSED + 1))
         done
+
+        NB_IP="$(sudo netbird status --ipv4 2>/dev/null | tr -d '[:space:]' || true)"
+        if [ -z "${NB_IP}" ]; then
+          NB_IP="$(printf '%s\n' "${STATUS_OUTPUT}" | awk -F': ' '/NetBird IP:/ {sub(/\/.*/, "", $2); print $2; exit}')"
+        fi
+        NB_FQDN="$(printf '%s\n' "${STATUS_OUTPUT}" | awk -F': ' '/FQDN:/ {print $2; exit}' | tr -d '[:space:]')"
+
+        echo "ip=${NB_IP}" >> "${GITHUB_OUTPUT}"
+        echo "fqdn=${NB_FQDN}" >> "${GITHUB_OUTPUT}"
+
+        printf '%s\n' "${STATUS_OUTPUT}"
+
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "### NetBird Connection Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "| :--- | :--- |"
+            echo "| **Status** | Connected (${ELAPSED}s) |"
+            echo "| **Hostname** | \`${HOSTNAME}\` |"
+            echo "| **NetBird IP** | \`${NB_IP:-N/A}\` |"
+            echo "| **FQDN** | \`${NB_FQDN:-N/A}\` |"
+            echo "| **Version** | \`${VERSION}\` |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+        fi
