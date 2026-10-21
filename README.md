@@ -28,13 +28,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Netbird Connect
         id: netbird
-        uses: Alemiz112/netbird-connect@v1
+        uses: thechiefn/netbird-connect@v1
         with:
           setup-key: ${{ secrets.NETBIRD_SETUP_KEY }}
           hostname: 'my-custom-hostname'
           management-url: 'https://my-netbird-management-url.com'
           args: '--custom-arg value'
+
+      - name: Disconnect Netbird (Optional Cleanup)
+        if: always()
+        run: sudo netbird down || true
+```

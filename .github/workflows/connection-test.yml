@@ -7,19 +7,34 @@ on:
   pull_request:
     branches:
       - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NB_SETUP_KEY: ${{ secrets.NB_SETUP_KEY }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+
+      - name: Validate action metadata
+        run: |
+          python3 -c 'import yaml, sys; data = yaml.safe_load(open("action.yml")); assert "runs" in data and "inputs" in data'
 
       - name: Netbird Action
+        if: env.NB_SETUP_KEY != ''
         uses: ./
         with:
           setup-key: ${{ secrets.NB_SETUP_KEY }}
 
       - name: Check for connection status
-        run:
-          netbird status
+        if: env.NB_SETUP_KEY != ''
+        run: netbird status
+
+      - name: Disconnect Netbird peer
+        if: always() && env.NB_SETUP_KEY != ''
+        run: sudo netbird down || true

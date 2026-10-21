@@ -59,7 +59,8 @@ runs:
         MANAGEMENT_URL: ${{ inputs.management-url }}
       run: |
         if [ -z "${HOSTNAME}" ]; then
-          HOSTNAME="github-$(cat /etc/hostname)"
+          RUNNER_HOST="$(hostname 2>/dev/null || uname -n 2>/dev/null || cat /etc/hostname 2>/dev/null || echo 'runner')"
+          HOSTNAME="github-${RUNNER_HOST}"
         fi
         sudo netbird up --setup-key=${SETUP_KEY} --hostname=${HOSTNAME} --management-url=${MANAGEMENT_URL} ${ADDITIONAL_ARGS}
     - name: Wait for Netbird to connect
