@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build:
@@ -19,7 +20,7 @@ jobs:
       NB_SETUP_KEY: ${{ secrets.NB_SETUP_KEY }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate action metadata
         run: |
